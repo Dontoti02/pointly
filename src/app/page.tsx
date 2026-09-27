@@ -279,18 +279,17 @@ export default function HomePage() {
   // Lógica del estado del Pulser para la leyenda
   const pulser = pasajero?.coordenadasPulser;
   const tieneHoraGenerada = Boolean(pulser?.horaGenerada);
-  const pulserActivo = pulser?.activo !== false;
+  const pulserActivo = pulser?.activo === true || (pulser?.activo !== false && pulser?.activo !== 'false');
 
   // Estados:
-  // 1. "YA LLEGÓ" si tiene hora generada exacta y está activo
-  // 2. "SALIDA" si el pulser se desactivó (activo === false)
-  // 3. "EN CAMINO" mientras tanto no tenga hora generada
-  const estadoLegend =
-    tieneHoraGenerada && pulserActivo
-      ? 'LLEGO'
-      : pulser && pulser.activo === false
+  // Se prioriza el estado calculado por el servidor (validando ubicaciones1 y ubicaciones de forma estricta)
+  const estadoLegend: 'LLEGO' | 'SALIDA' | 'EN_CAMINO' =
+    pulser?.estado ||
+    (!pulserActivo
       ? 'SALIDA'
-      : 'EN_CAMINO';
+      : tieneHoraGenerada
+      ? 'LLEGO'
+      : 'EN_CAMINO');
 
   return (
     <main className="relative w-screen h-screen overflow-hidden bg-slate-950 font-sans touch-auto">

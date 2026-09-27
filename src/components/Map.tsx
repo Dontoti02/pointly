@@ -508,7 +508,12 @@ export default function Map({
 
               {busLocation.horaGenerada && (
                 <div className="text-xs font-semibold text-zinc-900 mt-1">
-                  Hora generada: <span className="text-amber-600 font-mono">{busLocation.horaGenerada}</span>
+                  {busLocation.estado === 'SALIDA'
+                    ? 'Hora de salida:'
+                    : busLocation.estado === 'LLEGO'
+                    ? 'Hora de llegada:'
+                    : 'Hora generada:'}{' '}
+                  <span className="text-amber-600 font-mono">{busLocation.horaGenerada}</span>
                 </div>
               )}
 

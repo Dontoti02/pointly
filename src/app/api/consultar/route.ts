@@ -113,7 +113,7 @@ export async function POST(req: Request) {
       }
     }
 
-    // 2. Lee la ubicación activa del pulser en la colección ubicaciones1
+    // 2. Lee la ubicación y estado activo del pulser (en ubicaciones1 y ubicaciones)
     let coordenadasPulser: {
       lat: number;
       lng: number;
@@ -127,80 +127,140 @@ export async function POST(req: Request) {
 
     if (uidpulser) {
       try {
-        let pData: any = null;
+        let pData1: any = null;
+        let pData0: any = null;
 
-        // Opción A: Documento con ID igual a uidpulser
-        const pulserDoc = await getDoc(doc(db, DB_COLLECTIONS.UBICACIONES, uidpulser));
-        if (pulserDoc.exists()) {
-          pData = pulserDoc.data();
-        } else {
-          // Opción B: Documento con campo uidpulser == uidpulser
-          const qSnap = await getDocs(
-            query(collection(db, DB_COLLECTIONS.UBICACIONES), where('uidpulser', '==', uidpulser))
-          );
-          if (!qSnap.empty) {
-            pData = qSnap.docs[0].data();
+        // Consulta en ubicaciones1 (GPS en vivo)
+        try {
+          const snap1 = await getDoc(doc(db, DB_COLLECTIONS.UBICACIONES, uidpulser));
+          if (snap1.exists()) {
+            pData1 = snap1.data();
+          } else {
+            const q1 = await getDocs(
+              query(collection(db, DB_COLLECTIONS.UBICACIONES), where('uidpulser', '==', uidpulser))
+            );
+            if (!q1.empty) pData1 = q1.docs[0].data();
           }
+        } catch (e1) {
+          console.warn('Advertencia al consultar ubicaciones1:', e1);
         }
 
-        if (pData) {
-          const lat = Number(pData.lat ?? pData.latitude);
-          const lng = Number(pData.lng ?? pData.lon ?? pData.longitude);
-          const activo = pData.activo !== undefined ? Boolean(pData.activo) : true;
+        // Consulta en ubicaciones (Marcaciones de llegada/salida y estado del pulser)
+        try {
+          const snap0 = await getDoc(doc(db, DB_COLLECTIONS.UBICACIONES_ESTADO, uidpulser));
+          if (snap0.exists()) {
+            pData0 = snap0.data();
+          } else {
+            const q0 = await getDocs(
+              query(collection(db, DB_COLLECTIONS.UBICACIONES_ESTADO), where('uidpulser', '==', uidpulser))
+            );
+            if (!q0.empty) pData0 = q0.docs[0].data();
+          }
+        } catch (e0) {
+          console.warn('Advertencia al consultar ubicaciones:', e0);
+        }
 
-          let rawSeconds: number | null = null;
-          if (pData.timestamp?.seconds) {
-            rawSeconds = pData.timestamp.seconds;
-          } else if (pData.actualizado?.seconds) {
-            rawSeconds = pData.actualizado.seconds;
-          } else if (typeof pData.timestamp === 'number') {
-            rawSeconds = pData.timestamp;
+        if (pData1 || pData0) {
+          // Helper para normalizar 'activo' sin errores de tipo string/boolean
+          const parseBoolActivo = (val: any): boolean | null => {
+            if (val === undefined || val === null) return null;
+            if (val === false || val === 'false' || val === 0 || val === '0' || val === 'FALSE') return false;
+            if (val === true || val === 'true' || val === 1 || val === '1' || val === 'TRUE') return true;
+            return Boolean(val);
+          };
+
+          const activo1 = parseBoolActivo(pData1?.activo);
+          const activo0 = parseBoolActivo(pData0?.activo);
+
+          // Extraer timestamps de llegada y salida
+          const getTimestampSeconds = (t: any): number | null => {
+            if (!t) return null;
+            if (typeof t.seconds === 'number') return t.seconds;
+            if (typeof t === 'number') return t;
+            return null;
+          };
+
+          const llegadaSec = getTimestampSeconds(pData0?.llegada) || getTimestampSeconds(pData1?.llegada);
+          const salidaSec = getTimestampSeconds(pData0?.salida) || getTimestampSeconds(pData1?.salida);
+          const gpsTimestampSec = getTimestampSeconds(pData1?.timestamp) || getTimestampSeconds(pData0?.timestamp);
+
+          // Coordenadas: preferir las de ubicaciones1 (GPS activo) o ubicaciones
+          let lat = NaN;
+          let lng = NaN;
+          if (pData1 && !isNaN(Number(pData1.lat ?? pData1.latitude))) {
+            lat = Number(pData1.lat ?? pData1.latitude);
+            lng = Number(pData1.lng ?? pData1.lon ?? pData1.longitude);
+          } else if (pData0 && !isNaN(Number(pData0.lat ?? pData0.latitude))) {
+            lat = Number(pData0.lat ?? pData0.latitude);
+            lng = Number(pData0.lng ?? pData0.lon ?? pData0.longitude);
           }
 
-          let horaGenerada: string | null = null;
-          if (rawSeconds) {
-            const dateObj = new Date(rawSeconds * 1000);
-            horaGenerada = dateObj.toLocaleTimeString('es-PE', {
+          // Determinar con certeza si está activo o desactivado (salida)
+          let activo = true;
+          if (activo0 === false || activo1 === false) {
+            // Si el pulser desactivó explícitamente en cualquiera de las colecciones -> DESACTIVADO
+            activo = false;
+          } else if (salidaSec && llegadaSec && salidaSec >= llegadaSec) {
+            // Si la hora de salida registrada es más reciente o igual a la llegada -> SALIDA realizada
+            activo = false;
+          } else if (activo0 === true || activo1 === true) {
+            activo = true;
+          } else {
+            activo = false;
+          }
+
+          // Helper para dar formato a la hora en es-PE
+          const formatHora = (sec: number | null): string | null => {
+            if (!sec) return null;
+            const dateObj = new Date(sec * 1000);
+            return dateObj.toLocaleTimeString('es-PE', {
               hour: '2-digit',
               minute: '2-digit',
               second: '2-digit',
               hour12: true,
             });
-          }
+          };
 
-          // Lógica de estados solicitada:
-          // 1. Si tiene hora generada exacta y activo === true -> YA LLEGÓ
-          // 2. Si el pulser desactivó (activo === false) -> SALIDA (esperará el otro punto de abordaje)
-          // 3. Mientras tanto no tenga la hora exacta o no esté activo -> EN CAMINO
+          // Determinación estricta de estados:
+          // 1. SALIDA: El pulser desactivó (activo === false) o marcó salida
+          // 2. LLEGO: El pulser está activo y marcó llegada a la zona de abordaje
+          // 3. EN_CAMINO: No se ha confirmado llegada o está en tránsito
           let estado: 'LLEGO' | 'SALIDA' | 'EN_CAMINO' = 'EN_CAMINO';
           let estadoTexto = 'En camino a la zona de abordaje';
+          let horaReferenciaSec: number | null = null;
 
-          if (horaGenerada && activo) {
-            estado = 'LLEGO';
-            estadoTexto = `Ya llegó (${horaGenerada})`;
-          } else if (activo === false) {
+          if (!activo || (salidaSec && llegadaSec && salidaSec >= llegadaSec)) {
             estado = 'SALIDA';
-            estadoTexto = 'Salida realizada (Esperando siguiente punto)';
+            horaReferenciaSec = salidaSec || gpsTimestampSec;
+            const horaStr = formatHora(horaReferenciaSec);
+            estadoTexto = horaStr ? `Salida realizada (${horaStr})` : 'Salida realizada (Esperando siguiente punto)';
+          } else if (activo === true) {
+            estado = 'LLEGO';
+            horaReferenciaSec = llegadaSec || gpsTimestampSec;
+            const horaStr = formatHora(horaReferenciaSec);
+            estadoTexto = horaStr ? `Ya llegó (${horaStr})` : 'Ya llegó el bus';
           } else {
             estado = 'EN_CAMINO';
-            estadoTexto = 'Esperando llegada del bus';
+            estadoTexto = 'Esperando confirmación de llegada del bus';
           }
+
+          const horaGenerada = formatHora(horaReferenciaSec);
 
           if (!isNaN(lat) && !isNaN(lng)) {
             coordenadasPulser = {
               lat,
               lng,
               activo,
-              timestamp: rawSeconds,
+              timestamp: horaReferenciaSec || gpsTimestampSec,
               horaGenerada,
-              velocidad: pData.velocidad || null,
+              velocidad: pData1?.velocidad || pData0?.velocidad || null,
               estado,
               estadoTexto,
             };
           }
         }
       } catch (err) {
-        console.warn('Advertencia al consultar ubicaciones1:', err);
+        console.warn('Advertencia al consultar ubicaciones del pulser:', err);
       }
     }
 
