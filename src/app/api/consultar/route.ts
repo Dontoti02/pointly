@@ -261,7 +261,7 @@ export async function POST(req: Request) {
           const horaGenerada = formatHora(horaReferenciaSec);
 
           if (estado === 'SALIDA') {
-            estadoTexto = horaGenerada ? `Salida realizada (${horaGenerada})` : 'Salida realizada (Esperando siguiente punto)';
+            estadoTexto = horaGenerada ? `En ruta (${horaGenerada})` : 'En ruta (Hacia el siguiente punto)';
           } else if (estado === 'LLEGO') {
             estadoTexto = horaGenerada ? `Ya llegó (${horaGenerada})` : 'Ya llegó el bus';
           } else {

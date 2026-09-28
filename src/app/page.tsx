@@ -499,7 +499,7 @@ export default function HomePage() {
             {estadoLegend === 'SALIDA' ? (
               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40">
                 <Hourglass className="w-2.5 h-2.5 animate-pulse" />
-                SALIDA
+                EN RUTA
               </span>
             ) : estadoLegend === 'LLEGO' ? (
               <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40">
@@ -650,7 +650,7 @@ export default function HomePage() {
                     {estadoLegend === 'SALIDA' && (
                       <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-500/20 border border-amber-500/40 text-amber-300">
                         <Hourglass className="w-3 h-3 text-amber-400 animate-pulse" />
-                        SALIDA
+                        EN RUTA
                       </span>
                     )}
 
@@ -680,7 +680,7 @@ export default function HomePage() {
                     </div>
                   )}
 
-                  {/* 2. CASO: SALIDA */}
+                  {/* 2. CASO: EN RUTA */}
                   {estadoLegend === 'SALIDA' && (
                     <div className="space-y-2">
                       <div className="flex items-baseline justify-between">
@@ -693,7 +693,7 @@ export default function HomePage() {
                         </span>
                       </div>
                       <p className="text-[11px] text-slate-300 leading-tight">
-                        El pulser ha marcado salida de <strong>{pasajero.punto}</strong>.
+                        El bus se encuentra <strong>en ruta</strong> tras registrar salida de <strong>{pasajero.punto}</strong>.
                       </p>
 
                       {/* SIGUIENTE PARADERO CON VECTOR SVG */}

@@ -497,7 +497,7 @@ export default function Map({
                   </span>
                 ) : busLocation.estado === 'SALIDA' ? (
                   <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-900">
-                    SALIDA
+                    EN RUTA
                   </span>
                 ) : (
                   <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-sky-100 text-sky-800">
