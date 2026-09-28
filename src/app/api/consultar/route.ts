@@ -215,11 +215,12 @@ export async function POST(req: Request) {
           const salidaSec = getTimestampSeconds(pData0?.salida) || getTimestampSeconds(pData1?.salida) || 0;
           const gpsTimestampSec = getTimestampSeconds(pData1?.timestamp) || getTimestampSeconds(pData0?.timestamp) || 0;
 
-          // Helper para dar formato a la hora en es-PE
+          // Helper para dar formato a la hora en es-PE (Zona horaria de Perú: America/Lima)
           const formatHora = (sec: number | null): string | null => {
             if (!sec) return null;
             const dateObj = new Date(sec * 1000);
             return dateObj.toLocaleTimeString('es-PE', {
+              timeZone: 'America/Lima',
               hour: '2-digit',
               minute: '2-digit',
               second: '2-digit',
@@ -299,9 +300,9 @@ export async function POST(req: Request) {
             estadoTexto = 'Esperando confirmación de llegada del bus';
           }
 
-          // LOGGERS DETALLADOS EN CONSOLA DEL SERVIDOR
+          // LOGGERS DETALLADOS EN CONSOLA DEL SERVIDOR (Zona Horaria Perú)
           console.log('\n================== [API CONSULTAR] ==================');
-          console.log(`🕒 Timestamp consulta: ${new Date().toLocaleTimeString('es-PE')}`);
+          console.log(`🕒 Timestamp consulta: ${new Date().toLocaleTimeString('es-PE', { timeZone: 'America/Lima' })}`);
           console.log(`👤 Pasajero DNI: ${dni} | uidpulser: ${uidpulser}`);
           console.log(`📍 ubicaciones1 -> activo: ${activo1} | GPS: ${gpsTimestampSec ? formatHora(gpsTimestampSec) : 'N/A'} | Coords: [${lat}, ${lng}]`);
           console.log(`🛑 ubicaciones  -> activo: ${activo0} | llegada: ${llegadaSec ? formatHora(llegadaSec) : 'N/A'} | salida: ${salidaSec ? formatHora(salidaSec) : 'N/A'}`);

@@ -65,7 +65,15 @@ function getSaludoPasajero(nombreCompleto?: string) {
     };
   }
 
-  const hora = new Date().getHours();
+  // Obtener la hora exacta en la zona horaria de Perú (America/Lima)
+  const hora = parseInt(
+    new Intl.DateTimeFormat('es-PE', {
+      timeZone: 'America/Lima',
+      hour: 'numeric',
+      hour12: false,
+    }).format(new Date()),
+    10
+  );
   let saludoTiempo = '¡Buenas tardes';
   if (hora >= 5 && hora < 12) {
     saludoTiempo = '¡Buenos días';
@@ -241,6 +249,7 @@ export default function HomePage() {
       }, 7000);
       setLastUpdated(
         new Date().toLocaleTimeString('es-PE', {
+          timeZone: 'America/Lima',
           hour: '2-digit',
           minute: '2-digit',
           second: '2-digit',
@@ -271,11 +280,12 @@ export default function HomePage() {
       if (data.ok && data.pasajero) {
         setPasajero(data.pasajero);
         console.log(
-          `%c[Pointly Sync] Estado: ${data.pasajero?.coordenadasPulser?.estado} | Activo: ${data.pasajero?.coordenadasPulser?.activo} | Hora: ${data.pasajero?.coordenadasPulser?.horaGenerada || 'N/A'} | Refresco: ${new Date().toLocaleTimeString('es-PE')}`,
+          `%c[Pointly Sync] Estado: ${data.pasajero?.coordenadasPulser?.estado} | Activo: ${data.pasajero?.coordenadasPulser?.activo} | Hora: ${data.pasajero?.coordenadasPulser?.horaGenerada || 'N/A'} | Refresco: ${new Date().toLocaleTimeString('es-PE', { timeZone: 'America/Lima' })}`,
           'color: #38bdf8; font-weight: 500;'
         );
         setLastUpdated(
           new Date().toLocaleTimeString('es-PE', {
+            timeZone: 'America/Lima',
             hour: '2-digit',
             minute: '2-digit',
             second: '2-digit',
