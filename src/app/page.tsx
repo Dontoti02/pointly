@@ -713,44 +713,7 @@ export default function HomePage() {
                     )}
                   </div>
 
-                  {/* Horarios de Llegada y Salida del Paradero del Pasajero */}
-                  <div className="space-y-1.5 py-1">
-                    {pulser?.horaLlegada && (
-                      <div className="flex items-baseline justify-between py-1 px-2.5 rounded-lg bg-emerald-950/30 border border-emerald-500/25">
-                        <span className="text-xs text-slate-300 font-medium flex items-center gap-1.5">
-                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-                          Hora de llegada ({pasajero.punto}):
-                        </span>
-                        <span className="text-xs font-bold font-mono text-emerald-400">
-                          {pulser.horaLlegada}
-                        </span>
-                      </div>
-                    )}
 
-                    {pulser?.horaSalida && (
-                      <div className="flex items-baseline justify-between py-1 px-2.5 rounded-lg bg-amber-950/30 border border-amber-500/25">
-                        <span className="text-xs text-slate-300 font-medium flex items-center gap-1.5">
-                          <Clock className="w-3.5 h-3.5 text-amber-400" />
-                          Hora de salida ({pasajero.punto}):
-                        </span>
-                        <span className="text-xs font-bold font-mono text-amber-300">
-                          {pulser.horaSalida}
-                        </span>
-                      </div>
-                    )}
-
-                    {!pulser?.horaLlegada && !pulser?.horaSalida && pulser?.horaGenerada && (
-                      <div className="flex items-baseline justify-between py-1 px-2.5 rounded-lg bg-slate-900/40 border border-slate-800">
-                        <span className="text-xs text-slate-300 font-medium flex items-center gap-1.5">
-                          <Clock className="w-3.5 h-3.5 text-slate-400" />
-                          Última señal GPS:
-                        </span>
-                        <span className="text-xs font-bold font-mono text-sky-300">
-                          {pulser.horaGenerada}
-                        </span>
-                      </div>
-                    )}
-                  </div>
 
                   {/* Detalle contextual según estado */}
                   {estadoLegend === 'LLEGO' && (
