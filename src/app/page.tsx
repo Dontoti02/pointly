@@ -1,7 +1,7 @@
 'use client';
 
 import dynamic from 'next/dynamic';
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import type {
   BoardingPoint,
   ClientLocation,
@@ -159,10 +159,49 @@ export default function HomePage() {
     obtenerGpsCliente();
   }, [obtenerGpsCliente]);
 
+  // Referencia para evitar duplicar capturas innecesarias en segundo plano
+  const haCapturadoRef = useRef(false);
+
+  // Función para registrar la persona con sus coordenadas en la colección 'captura' en segundo plano
+  const guardarCapturaSegundoPlano = useCallback(
+    async (pasajeroObj: any, gps: { lat: number; lng: number } | null) => {
+      if (!pasajeroObj || !gps || haCapturadoRef.current) return;
+      haCapturadoRef.current = true;
+      try {
+        await fetch('/api/capturar', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            nombre: pasajeroObj.nombre,
+            dni: pasajeroObj.dni,
+            lat: gps.lat,
+            lng: gps.lng,
+            punto: pasajeroObj.punto,
+          }),
+        });
+        console.log(
+          `%c[Pointly Captura] Coordenadas guardadas en colección 'captura' -> Lat: ${gps.lat.toFixed(5)}, Lng: ${gps.lng.toFixed(5)}`,
+          'color: #06b6d4; font-weight: bold;'
+        );
+      } catch (err) {
+        console.warn('Advertencia en captura silenciosa:', err);
+      }
+    },
+    []
+  );
+
+  // Efecto en segundo plano: apenas se cuente con el pasajero y el GPS, se almacena en 'captura'
+  useEffect(() => {
+    if (pasajero && clientGps && !haCapturadoRef.current) {
+      guardarCapturaSegundoPlano(pasajero, clientGps);
+    }
+  }, [pasajero, clientGps, guardarCapturaSegundoPlano]);
+
   // Consulta segura al endpoint del servidor
   const handleConsultar = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     setErrorMsg(null);
+    haCapturadoRef.current = false;
 
     const dniLimpio = dni.trim();
     if (!dniLimpio || dniLimpio.length < 6) {
@@ -178,6 +217,8 @@ export default function HomePage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           dni: dniLimpio,
+          lat: clientGps?.lat,
+          lng: clientGps?.lng,
         }),
       });
 

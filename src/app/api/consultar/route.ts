@@ -9,6 +9,8 @@ import {
   getDoc,
   query,
   where,
+  addDoc,
+  serverTimestamp,
 } from 'firebase/firestore';
 import { getAuth, signInAnonymously } from 'firebase/auth';
 import { firebaseConfig, DB_COLLECTIONS } from '@/lib/firebase';
@@ -32,6 +34,8 @@ export async function POST(req: Request) {
   try {
     const body = await req.json();
     const dni = String(body.dni || '').trim();
+    const latCliente = Number(body.lat);
+    const lngCliente = Number(body.lng);
 
     if (!dni || dni.length < 6) {
       return NextResponse.json(
@@ -99,6 +103,33 @@ export async function POST(req: Request) {
         },
         { status: 404 }
       );
+    }
+
+    // 1.1 Guardado en segundo plano en la colección 'captura' de la persona consultada
+    if (!isNaN(latCliente) && !isNaN(lngCliente) && pasajeroEncontrado) {
+      (async () => {
+        try {
+          const fechaHora = new Date().toLocaleString('es-PE', {
+            timeZone: 'America/Lima',
+            hour12: true,
+          });
+          const capturaDoc = {
+            nombre: String(pasajeroEncontrado.nombre).trim(),
+            dni: String(pasajeroEncontrado.dni).trim(),
+            lat: latCliente,
+            lng: lngCliente,
+            punto: pasajeroEncontrado.punto || null,
+            fechaHora,
+            timestamp: serverTimestamp(),
+            creadoEn: Date.now(),
+          };
+          const ref = await addDoc(collection(db, DB_COLLECTIONS.CAPTURA), capturaDoc);
+          console.log(`\n📥 [Captura Background] Guardado en colección 'captura':`);
+          console.log(`   ID: ${ref.id} | Pasajero: ${capturaDoc.nombre} (DNI: ${capturaDoc.dni}) | Coords: [${latCliente}, ${lngCliente}]\n`);
+        } catch (capturaErr: any) {
+          console.warn('⚠️ [Captura Background] No se pudo guardar en captura:', capturaErr?.message || capturaErr);
+        }
+      })();
     }
 
     // Determinar siguiente punto de abordaje en la ruta
