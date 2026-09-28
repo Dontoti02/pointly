@@ -713,36 +713,56 @@ export default function HomePage() {
                     )}
                   </div>
 
-                  {/* 1. CASO: YA LLEGÓ */}
-                  {estadoLegend === 'LLEGO' && (
-                    <div className="space-y-1">
-                      <div className="flex items-baseline justify-between">
-                        <span className="text-xs text-slate-300 font-medium flex items-center gap-1">
-                          <Clock className="w-3 h-3 text-slate-400" />
-                          Hora de llegada:
+                  {/* Horarios de Llegada y Salida del Paradero del Pasajero */}
+                  <div className="space-y-1.5 py-1">
+                    {pulser?.horaLlegada && (
+                      <div className="flex items-baseline justify-between py-1 px-2.5 rounded-lg bg-emerald-950/30 border border-emerald-500/25">
+                        <span className="text-xs text-slate-300 font-medium flex items-center gap-1.5">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                          Hora de llegada ({pasajero.punto}):
                         </span>
-                        <span className="text-sm font-extrabold font-mono text-emerald-400">
-                          {pulser?.horaGenerada}
+                        <span className="text-xs font-bold font-mono text-emerald-400">
+                          {pulser.horaLlegada}
                         </span>
                       </div>
+                    )}
+
+                    {pulser?.horaSalida && (
+                      <div className="flex items-baseline justify-between py-1 px-2.5 rounded-lg bg-amber-950/30 border border-amber-500/25">
+                        <span className="text-xs text-slate-300 font-medium flex items-center gap-1.5">
+                          <Clock className="w-3.5 h-3.5 text-amber-400" />
+                          Hora de salida ({pasajero.punto}):
+                        </span>
+                        <span className="text-xs font-bold font-mono text-amber-300">
+                          {pulser.horaSalida}
+                        </span>
+                      </div>
+                    )}
+
+                    {!pulser?.horaLlegada && !pulser?.horaSalida && pulser?.horaGenerada && (
+                      <div className="flex items-baseline justify-between py-1 px-2.5 rounded-lg bg-slate-900/40 border border-slate-800">
+                        <span className="text-xs text-slate-300 font-medium flex items-center gap-1.5">
+                          <Clock className="w-3.5 h-3.5 text-slate-400" />
+                          Última señal GPS:
+                        </span>
+                        <span className="text-xs font-bold font-mono text-sky-300">
+                          {pulser.horaGenerada}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Detalle contextual según estado */}
+                  {estadoLegend === 'LLEGO' && (
+                    <div className="pt-0.5">
                       <p className="text-[11px] text-slate-300 leading-tight">
                         El bus se encuentra en la zona de abordaje de <strong>{pasajero.punto}</strong>.
                       </p>
                     </div>
                   )}
 
-                  {/* 2. CASO: EN RUTA */}
                   {estadoLegend === 'SALIDA' && (
-                    <div className="space-y-2">
-                      <div className="flex items-baseline justify-between">
-                        <span className="text-xs text-slate-300 font-medium flex items-center gap-1">
-                          <Clock className="w-3 h-3 text-slate-400" />
-                          Hora de salida:
-                        </span>
-                        <span className="text-sm font-extrabold font-mono text-amber-300">
-                          {pulser?.horaGenerada || 'Registrada'}
-                        </span>
-                      </div>
+                    <div className="space-y-2 pt-0.5">
                       <p className="text-[11px] text-slate-300 leading-tight">
                         El bus se encuentra <strong>en ruta</strong> tras registrar salida de <strong>{pasajero.punto}</strong>.
                       </p>
@@ -764,9 +784,8 @@ export default function HomePage() {
                     </div>
                   )}
 
-                  {/* 3. CASO: EN CAMINO */}
                   {estadoLegend === 'EN_CAMINO' && (
-                    <div className="space-y-1">
+                    <div className="space-y-1 pt-0.5">
                       <div className="flex items-center gap-1.5 text-xs text-sky-300 font-medium">
                         <RefreshCw className="w-3.5 h-3.5 text-sky-400 animate-spin" />
                         <span>Esperando confirmación de llegada del bus</span>
@@ -774,6 +793,73 @@ export default function HomePage() {
                       <p className="text-[11px] text-slate-300 leading-tight">
                         El bus se dirige a <strong>{pasajero.punto}</strong>.
                       </p>
+                    </div>
+                  )}
+
+                  {/* ITINERARIO COMPLETO DE PARADAS (llegada, salida, llegada1, salida1, etc.) */}
+                  {pulser?.historialPuntos && pulser.historialPuntos.length > 0 && (
+                    <div className="mt-2.5 pt-2 border-t border-slate-700/60">
+                      <div className="flex items-center justify-between mb-1.5">
+                        <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wide flex items-center gap-1">
+                          <Route className="w-3 h-3 text-slate-400" />
+                          Paradas de la ruta
+                        </span>
+                        <span className="text-[9px] text-slate-500">
+                          {pulser.historialPuntos.length} puntos
+                        </span>
+                      </div>
+                      <div className="space-y-1.5">
+                        {pulser.historialPuntos.map((pto) => {
+                          const esMiParada = pto.punto.toUpperCase().trim() === pasajero.punto?.toUpperCase().trim();
+                          const tieneHoras = pto.horaLlegada || pto.horaSalida;
+                          return (
+                            <div
+                              key={pto.idx}
+                              className={`p-2 rounded-lg text-xs transition-all ${
+                                esMiParada
+                                  ? 'bg-amber-950/20 border border-amber-500/40 shadow-sm'
+                                  : 'bg-slate-900/50 border border-slate-800'
+                              }`}
+                            >
+                              <div className="flex items-center justify-between mb-0.5">
+                                <span className={`font-semibold flex items-center gap-1.5 ${esMiParada ? 'text-amber-300 font-bold' : 'text-slate-200'}`}>
+                                  <span className={`w-2 h-2 rounded-full ${pto.horaSalida ? 'bg-amber-400' : pto.horaLlegada ? 'bg-emerald-400 animate-pulse' : 'bg-slate-600'}`}></span>
+                                  {pto.punto}
+                                  {esMiParada && (
+                                    <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-amber-500/25 text-amber-300 border border-amber-500/40 font-semibold">
+                                      Tu Parada
+                                    </span>
+                                  )}
+                                </span>
+                                <span className="text-[10px] font-medium text-slate-400">
+                                  {pto.horaSalida ? 'Salida' : pto.horaLlegada ? 'En parada' : 'Pendiente'}
+                                </span>
+                              </div>
+
+                              {tieneHoras ? (
+                                <div className="grid grid-cols-2 gap-1.5 mt-1 pt-1 border-t border-slate-800/80 text-[10px]">
+                                  <div className="flex items-center gap-1 text-slate-300">
+                                    <span className="text-slate-400 font-medium">Llegada:</span>
+                                    <span className="font-mono font-bold text-emerald-400">
+                                      {pto.horaLlegada || '—'}
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center gap-1 text-slate-300">
+                                    <span className="text-slate-400 font-medium">Salida:</span>
+                                    <span className="font-mono font-bold text-amber-300">
+                                      {pto.horaSalida || '—'}
+                                    </span>
+                                  </div>
+                                </div>
+                              ) : (
+                                <span className="text-[10px] text-slate-500 italic block mt-0.5">
+                                  Sin registro de llegada aún
+                                </span>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
                   )}
                 </div>
@@ -854,7 +940,11 @@ export default function HomePage() {
                       </span>
                       <span className="text-[10px] text-slate-400 block">
                         {pulser
-                          ? `Transmitiendo (${pulser.horaGenerada || 'Activo'})`
+                          ? pulser.horaSalida
+                            ? `Salida: ${pulser.horaSalida}`
+                            : pulser.horaLlegada
+                            ? `Llegada: ${pulser.horaLlegada}`
+                            : `Transmitiendo (${pulser.horaGenerada || 'Activo'})`
                           : 'Esperando señal'}
                       </span>
                     </div>

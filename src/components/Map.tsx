@@ -176,6 +176,14 @@ export interface BusLocation {
   lng: number;
   activo?: boolean;
   horaGenerada?: string | null;
+  horaLlegada?: string | null;
+  horaSalida?: string | null;
+  historialPuntos?: Array<{
+    punto: string;
+    idx: number;
+    horaLlegada: string | null;
+    horaSalida: string | null;
+  }>;
   timestamp?: number | null;
   velocidad?: number | null;
   estado?: 'LLEGO' | 'SALIDA' | 'EN_CAMINO';
@@ -506,14 +514,23 @@ export default function Map({
                 )}
               </div>
 
-              {busLocation.horaGenerada && (
+              {busLocation.horaLlegada && (
+                <div className="text-xs font-semibold text-zinc-900 mt-1 flex items-center justify-between">
+                  <span className="text-zinc-600">Llegada:</span>
+                  <span className="text-emerald-600 font-mono font-bold">{busLocation.horaLlegada}</span>
+                </div>
+              )}
+
+              {busLocation.horaSalida && (
+                <div className="text-xs font-semibold text-zinc-900 mt-0.5 flex items-center justify-between">
+                  <span className="text-zinc-600">Salida:</span>
+                  <span className="text-amber-600 font-mono font-bold">{busLocation.horaSalida}</span>
+                </div>
+              )}
+
+              {!busLocation.horaLlegada && !busLocation.horaSalida && busLocation.horaGenerada && (
                 <div className="text-xs font-semibold text-zinc-900 mt-1">
-                  {busLocation.estado === 'SALIDA'
-                    ? 'Hora de salida:'
-                    : busLocation.estado === 'LLEGO'
-                    ? 'Hora de llegada:'
-                    : 'Hora generada:'}{' '}
-                  <span className="text-amber-600 font-mono">{busLocation.horaGenerada}</span>
+                  Hora: <span className="text-amber-600 font-mono">{busLocation.horaGenerada}</span>
                 </div>
               )}
 

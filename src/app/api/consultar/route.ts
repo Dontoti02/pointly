@@ -151,6 +151,14 @@ export async function POST(req: Request) {
       activo: boolean;
       timestamp: number | null;
       horaGenerada: string | null;
+      horaLlegada?: string | null;
+      horaSalida?: string | null;
+      historialPuntos?: Array<{
+        punto: string;
+        idx: number;
+        horaLlegada: string | null;
+        horaSalida: string | null;
+      }>;
       velocidad?: number | null;
       estado: 'LLEGO' | 'SALIDA' | 'EN_CAMINO';
       estadoTexto: string;
@@ -203,6 +211,8 @@ export async function POST(req: Request) {
           const activo1 = parseBoolActivo(pData1?.activo);
           const activo0 = parseBoolActivo(pData0?.activo);
 
+          const mergedData = { ...(pData0 || {}), ...(pData1 || {}) };
+
           // Extraer timestamps de llegada, salida y GPS en vivo
           const getTimestampSeconds = (t: any): number | null => {
             if (!t) return null;
@@ -211,8 +221,6 @@ export async function POST(req: Request) {
             return null;
           };
 
-          const llegadaSec = getTimestampSeconds(pData0?.llegada) || getTimestampSeconds(pData1?.llegada) || 0;
-          const salidaSec = getTimestampSeconds(pData0?.salida) || getTimestampSeconds(pData1?.salida) || 0;
           const gpsTimestampSec = getTimestampSeconds(pData1?.timestamp) || getTimestampSeconds(pData0?.timestamp) || 0;
 
           // Helper para dar formato a la hora en es-PE (Zona horaria de Perú: America/Lima)
@@ -239,73 +247,120 @@ export async function POST(req: Request) {
             lng = Number(pData0.lng ?? pData0.lon ?? pData0.longitude);
           }
 
-          // RESOLUCIÓN CRONOLÓGICA Y DETERMINACIÓN DE ESTADOS
+          // MAPEO DE PARADAS EN LA RUTA:
+          // Índice 0 (primer punto) -> 'llegada' y 'salida' (o 'llegada0' / 'salida0')
+          // Índice 1 (segundo punto) -> 'llegada1' y 'salida1'
+          // Índice 2 (tercer punto) -> 'llegada2' y 'salida2', etc.
+          const idxPuntoPasajero = puntosRuta.findIndex(
+            (p) => p.toUpperCase().trim() === puntoPasajeroUpper
+          );
+
+          let puntoLlegadaSec: number | null = null;
+          let puntoSalidaSec: number | null = null;
+
+          if (idxPuntoPasajero === 0) {
+            puntoLlegadaSec = getTimestampSeconds(mergedData['llegada']) || getTimestampSeconds(mergedData['llegada0']);
+            puntoSalidaSec = getTimestampSeconds(mergedData['salida']) || getTimestampSeconds(mergedData['salida0']);
+          } else if (idxPuntoPasajero > 0) {
+            puntoLlegadaSec = getTimestampSeconds(mergedData[`llegada${idxPuntoPasajero}`]);
+            puntoSalidaSec = getTimestampSeconds(mergedData[`salida${idxPuntoPasajero}`]);
+          }
+
+          // Historial de todas las paradas de la ruta con sus horas
+          let maxLlegadaGlobalSec = 0;
+          let maxSalidaGlobalSec = 0;
+          const historialPuntos: Array<{
+            punto: string;
+            idx: number;
+            horaLlegada: string | null;
+            horaSalida: string | null;
+          }> = [];
+
+          puntosRuta.forEach((pto, i) => {
+            const kLleg = i === 0 ? 'llegada' : `llegada${i}`;
+            const kSal = i === 0 ? 'salida' : `salida${i}`;
+            const sLleg = getTimestampSeconds(mergedData[kLleg]) || (i === 0 ? getTimestampSeconds(mergedData['llegada0']) : null);
+            const sSal = getTimestampSeconds(mergedData[kSal]) || (i === 0 ? getTimestampSeconds(mergedData['salida0']) : null);
+            if (sLleg && sLleg > maxLlegadaGlobalSec) maxLlegadaGlobalSec = sLleg;
+            if (sSal && sSal > maxSalidaGlobalSec) maxSalidaGlobalSec = sSal;
+            historialPuntos.push({
+              punto: pto,
+              idx: i,
+              horaLlegada: formatHora(sLleg),
+              horaSalida: formatHora(sSal),
+            });
+          });
+
+          // Escanear cualquier otra llave llegadaN / salidaN
+          for (const [k, v] of Object.entries(mergedData)) {
+            const s = getTimestampSeconds(v);
+            if (!s) continue;
+            if (/^llegada\d*$/i.test(k) && s > maxLlegadaGlobalSec) maxLlegadaGlobalSec = s;
+            if (/^salida\d*$/i.test(k) && s > maxSalidaGlobalSec) maxSalidaGlobalSec = s;
+          }
+
+          const llegadaSecFinal = puntoLlegadaSec ?? (idxPuntoPasajero < 0 ? maxLlegadaGlobalSec : null);
+          const salidaSecFinal = puntoSalidaSec ?? (idxPuntoPasajero < 0 ? maxSalidaGlobalSec : null);
+
+          // RESOLUCIÓN DE ESTADO Y HORAS PARA EL PASAJERO
           let activo = false;
           let estado: 'LLEGO' | 'SALIDA' | 'EN_CAMINO' = 'EN_CAMINO';
           let estadoTexto = 'En camino a la zona de abordaje';
           let horaReferenciaSec: number | null = null;
           let motivoLog = '';
 
-          if (salidaSec > llegadaSec && (salidaSec >= gpsTimestampSec || activo1 === false)) {
-            // Caso 1: La salida registrada es posterior a la llegada y el pulser no está activo posteriormente
+          if (salidaSecFinal && (!llegadaSecFinal || salidaSecFinal >= llegadaSecFinal)) {
+            // El bus ya completó salida de su paradero -> EN RUTA
             activo = false;
             estado = 'SALIDA';
-            horaReferenciaSec = salidaSec || gpsTimestampSec;
-            motivoLog = `Salida registrada posterior a llegada (salida: ${formatHora(salidaSec)} > llegada: ${formatHora(llegadaSec)})`;
-          } else if (llegadaSec > salidaSec) {
-            // Caso 2: Se registró una nueva llegada posterior a la salida
+            horaReferenciaSec = salidaSecFinal;
+            motivoLog = `Salida registrada en ${pasajeroEncontrado.punto || 'paradero'} (${formatHora(salidaSecFinal)})`;
+          } else if (llegadaSecFinal && (!salidaSecFinal || llegadaSecFinal > salidaSecFinal)) {
+            // El bus ya llegó a su paradero y aún no sale -> YA LLEGÓ
             activo = true;
             estado = 'LLEGO';
-            horaReferenciaSec = llegadaSec || gpsTimestampSec;
-            motivoLog = `Nueva llegada registrada posterior a salida (llegada: ${formatHora(llegadaSec)} > salida: ${formatHora(salidaSec)})`;
-          } else if (activo1 === true && gpsTimestampSec >= salidaSec) {
-            // Caso 3: El pulser activó a true y está transmitiendo GPS después de la salida
+            horaReferenciaSec = llegadaSecFinal;
+            motivoLog = `Llegada registrada en ${pasajeroEncontrado.punto || 'paradero'} (${formatHora(llegadaSecFinal)})`;
+          } else if (activo1 === true && gpsTimestampSec) {
+            // Bus en movimiento en camino
             activo = true;
-            estado = 'LLEGO';
-            horaReferenciaSec = llegadaSec || gpsTimestampSec;
-            motivoLog = `Pulser reactivado a TRUE en ubicaciones1 (GPS: ${formatHora(gpsTimestampSec)} >= salida: ${formatHora(salidaSec)})`;
-          } else if (activo1 === false) {
-            // Caso 4: Pulser desactivó explícitamente en ubicaciones1
+            estado = 'EN_CAMINO';
+            horaReferenciaSec = gpsTimestampSec;
+            motivoLog = 'Bus en tránsito hacia el paradero (GPS activo)';
+          } else if (maxSalidaGlobalSec > 0 && maxSalidaGlobalSec >= maxLlegadaGlobalSec) {
             activo = false;
             estado = 'SALIDA';
-            horaReferenciaSec = salidaSec || gpsTimestampSec;
-            motivoLog = 'Pulser desactivado (activo === false en ubicaciones1)';
-          } else if (activo0 === false && salidaSec > 0) {
-            // Caso 5: Marcación de salida en ubicaciones
-            activo = false;
-            estado = 'SALIDA';
-            horaReferenciaSec = salidaSec || gpsTimestampSec;
-            motivoLog = 'Salida realizada (activo === false en ubicaciones)';
-          } else if (activo1 === true || activo0 === true) {
-            // Caso 6: Pulser activo general
-            activo = true;
-            estado = 'LLEGO';
-            horaReferenciaSec = llegadaSec || gpsTimestampSec;
-            motivoLog = 'Pulser activo (true)';
+            horaReferenciaSec = maxSalidaGlobalSec;
+            motivoLog = 'Salida de parada previa en la ruta';
           } else {
-            // Caso 7: En camino
             activo = false;
             estado = 'EN_CAMINO';
             horaReferenciaSec = null;
-            motivoLog = 'En espera / en camino';
+            motivoLog = 'Esperando confirmación de llegada del bus';
           }
 
           const horaGenerada = formatHora(horaReferenciaSec);
+          const horaLlegadaPunto = formatHora(puntoLlegadaSec || (idxPuntoPasajero < 0 && maxLlegadaGlobalSec ? maxLlegadaGlobalSec : null));
+          const horaSalidaPunto = formatHora(puntoSalidaSec || (idxPuntoPasajero < 0 && maxSalidaGlobalSec ? maxSalidaGlobalSec : null));
 
           if (estado === 'SALIDA') {
-            estadoTexto = horaGenerada ? `En ruta (${horaGenerada})` : 'En ruta (Hacia el siguiente punto)';
+            estadoTexto = horaSalidaPunto
+              ? `En ruta tras salir de ${pasajeroEncontrado.punto || 'la estación'} (${horaSalidaPunto})`
+              : 'En ruta hacia el siguiente punto';
           } else if (estado === 'LLEGO') {
-            estadoTexto = horaGenerada ? `Ya llegó (${horaGenerada})` : 'Ya llegó el bus';
+            estadoTexto = horaLlegadaPunto
+              ? `Ya llegó a ${pasajeroEncontrado.punto || 'la zona de abordaje'} (${horaLlegadaPunto})`
+              : 'Ya llegó el bus';
           } else {
-            estadoTexto = 'Esperando confirmación de llegada del bus';
+            estadoTexto = `Esperando llegada a ${pasajeroEncontrado.punto || 'la zona de abordaje'}`;
           }
 
           // LOGGERS DETALLADOS EN CONSOLA DEL SERVIDOR (Zona Horaria Perú)
           console.log('\n================== [API CONSULTAR] ==================');
           console.log(`🕒 Timestamp consulta: ${new Date().toLocaleTimeString('es-PE', { timeZone: 'America/Lima' })}`);
-          console.log(`👤 Pasajero DNI: ${dni} | uidpulser: ${uidpulser}`);
-          console.log(`📍 ubicaciones1 -> activo: ${activo1} | GPS: ${gpsTimestampSec ? formatHora(gpsTimestampSec) : 'N/A'} | Coords: [${lat}, ${lng}]`);
-          console.log(`🛑 ubicaciones  -> activo: ${activo0} | llegada: ${llegadaSec ? formatHora(llegadaSec) : 'N/A'} | salida: ${salidaSec ? formatHora(salidaSec) : 'N/A'}`);
+          console.log(`👤 Pasajero DNI: ${dni} | uidpulser: ${uidpulser} | Punto: ${puntoPasajeroUpper} (idx: ${idxPuntoPasajero})`);
+          console.log(`📍 Llegada Punto: ${horaLlegadaPunto || 'Pendiente'} | Salida Punto: ${horaSalidaPunto || 'Pendiente'}`);
+          console.log(`🗺️ Paradas Ruta: ${JSON.stringify(historialPuntos)}`);
           console.log(`🎯 RESOLUCIÓN   -> ACTIVO: ${activo} | ESTADO: ${estado} | HORA: ${horaGenerada}`);
           console.log(`💡 MOTIVO       -> ${motivoLog}`);
           console.log('=====================================================\n');
@@ -317,6 +372,9 @@ export async function POST(req: Request) {
               activo,
               timestamp: horaReferenciaSec || gpsTimestampSec,
               horaGenerada,
+              horaLlegada: horaLlegadaPunto,
+              horaSalida: horaSalidaPunto,
+              historialPuntos,
               velocidad: pData1?.velocidad || pData0?.velocidad || null,
               estado,
               estadoTexto,
