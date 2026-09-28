@@ -190,6 +190,10 @@ export default function HomePage() {
       }
 
       setPasajero(data.pasajero);
+      console.log(
+        `%c[Pointly] Consulta inicial exitosa -> Estado: ${data.pasajero?.coordenadasPulser?.estado} | Activo: ${data.pasajero?.coordenadasPulser?.activo} | Hora: ${data.pasajero?.coordenadasPulser?.horaGenerada || 'N/A'}`,
+        'color: #10b981; font-weight: bold; background: #064e3b; padding: 2px 6px; border-radius: 4px;'
+      );
       setShowWelcomeToast(true);
       setTimeout(() => {
         setShowWelcomeToast(false);
@@ -225,6 +229,10 @@ export default function HomePage() {
       const data = await res.json();
       if (data.ok && data.pasajero) {
         setPasajero(data.pasajero);
+        console.log(
+          `%c[Pointly Sync] Estado: ${data.pasajero?.coordenadasPulser?.estado} | Activo: ${data.pasajero?.coordenadasPulser?.activo} | Hora: ${data.pasajero?.coordenadasPulser?.horaGenerada || 'N/A'} | Refresco: ${new Date().toLocaleTimeString('es-PE')}`,
+          'color: #38bdf8; font-weight: 500;'
+        );
         setLastUpdated(
           new Date().toLocaleTimeString('es-PE', {
             hour: '2-digit',

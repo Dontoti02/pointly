@@ -172,7 +172,7 @@ export async function POST(req: Request) {
           const activo1 = parseBoolActivo(pData1?.activo);
           const activo0 = parseBoolActivo(pData0?.activo);
 
-          // Extraer timestamps de llegada y salida
+          // Extraer timestamps de llegada, salida y GPS en vivo
           const getTimestampSeconds = (t: any): number | null => {
             if (!t) return null;
             if (typeof t.seconds === 'number') return t.seconds;
@@ -180,34 +180,9 @@ export async function POST(req: Request) {
             return null;
           };
 
-          const llegadaSec = getTimestampSeconds(pData0?.llegada) || getTimestampSeconds(pData1?.llegada);
-          const salidaSec = getTimestampSeconds(pData0?.salida) || getTimestampSeconds(pData1?.salida);
-          const gpsTimestampSec = getTimestampSeconds(pData1?.timestamp) || getTimestampSeconds(pData0?.timestamp);
-
-          // Coordenadas: preferir las de ubicaciones1 (GPS activo) o ubicaciones
-          let lat = NaN;
-          let lng = NaN;
-          if (pData1 && !isNaN(Number(pData1.lat ?? pData1.latitude))) {
-            lat = Number(pData1.lat ?? pData1.latitude);
-            lng = Number(pData1.lng ?? pData1.lon ?? pData1.longitude);
-          } else if (pData0 && !isNaN(Number(pData0.lat ?? pData0.latitude))) {
-            lat = Number(pData0.lat ?? pData0.latitude);
-            lng = Number(pData0.lng ?? pData0.lon ?? pData0.longitude);
-          }
-
-          // Determinar con certeza si está activo o desactivado (salida)
-          let activo = true;
-          if (activo0 === false || activo1 === false) {
-            // Si el pulser desactivó explícitamente en cualquiera de las colecciones -> DESACTIVADO
-            activo = false;
-          } else if (salidaSec && llegadaSec && salidaSec >= llegadaSec) {
-            // Si la hora de salida registrada es más reciente o igual a la llegada -> SALIDA realizada
-            activo = false;
-          } else if (activo0 === true || activo1 === true) {
-            activo = true;
-          } else {
-            activo = false;
-          }
+          const llegadaSec = getTimestampSeconds(pData0?.llegada) || getTimestampSeconds(pData1?.llegada) || 0;
+          const salidaSec = getTimestampSeconds(pData0?.salida) || getTimestampSeconds(pData1?.salida) || 0;
+          const gpsTimestampSec = getTimestampSeconds(pData1?.timestamp) || getTimestampSeconds(pData0?.timestamp) || 0;
 
           // Helper para dar formato a la hora en es-PE
           const formatHora = (sec: number | null): string | null => {
@@ -221,30 +196,87 @@ export async function POST(req: Request) {
             });
           };
 
-          // Determinación estricta de estados:
-          // 1. SALIDA: El pulser desactivó (activo === false) o marcó salida
-          // 2. LLEGO: El pulser está activo y marcó llegada a la zona de abordaje
-          // 3. EN_CAMINO: No se ha confirmado llegada o está en tránsito
+          // Coordenadas: preferir las de ubicaciones1 (GPS activo) o ubicaciones
+          let lat = NaN;
+          let lng = NaN;
+          if (pData1 && !isNaN(Number(pData1.lat ?? pData1.latitude))) {
+            lat = Number(pData1.lat ?? pData1.latitude);
+            lng = Number(pData1.lng ?? pData1.lon ?? pData1.longitude);
+          } else if (pData0 && !isNaN(Number(pData0.lat ?? pData0.latitude))) {
+            lat = Number(pData0.lat ?? pData0.latitude);
+            lng = Number(pData0.lng ?? pData0.lon ?? pData0.longitude);
+          }
+
+          // RESOLUCIÓN CRONOLÓGICA Y DETERMINACIÓN DE ESTADOS
+          let activo = false;
           let estado: 'LLEGO' | 'SALIDA' | 'EN_CAMINO' = 'EN_CAMINO';
           let estadoTexto = 'En camino a la zona de abordaje';
           let horaReferenciaSec: number | null = null;
+          let motivoLog = '';
 
-          if (!activo || (salidaSec && llegadaSec && salidaSec >= llegadaSec)) {
+          if (salidaSec > llegadaSec && (salidaSec >= gpsTimestampSec || activo1 === false)) {
+            // Caso 1: La salida registrada es posterior a la llegada y el pulser no está activo posteriormente
+            activo = false;
             estado = 'SALIDA';
             horaReferenciaSec = salidaSec || gpsTimestampSec;
-            const horaStr = formatHora(horaReferenciaSec);
-            estadoTexto = horaStr ? `Salida realizada (${horaStr})` : 'Salida realizada (Esperando siguiente punto)';
-          } else if (activo === true) {
+            motivoLog = `Salida registrada posterior a llegada (salida: ${formatHora(salidaSec)} > llegada: ${formatHora(llegadaSec)})`;
+          } else if (llegadaSec > salidaSec) {
+            // Caso 2: Se registró una nueva llegada posterior a la salida
+            activo = true;
             estado = 'LLEGO';
             horaReferenciaSec = llegadaSec || gpsTimestampSec;
-            const horaStr = formatHora(horaReferenciaSec);
-            estadoTexto = horaStr ? `Ya llegó (${horaStr})` : 'Ya llegó el bus';
+            motivoLog = `Nueva llegada registrada posterior a salida (llegada: ${formatHora(llegadaSec)} > salida: ${formatHora(salidaSec)})`;
+          } else if (activo1 === true && gpsTimestampSec >= salidaSec) {
+            // Caso 3: El pulser activó a true y está transmitiendo GPS después de la salida
+            activo = true;
+            estado = 'LLEGO';
+            horaReferenciaSec = llegadaSec || gpsTimestampSec;
+            motivoLog = `Pulser reactivado a TRUE en ubicaciones1 (GPS: ${formatHora(gpsTimestampSec)} >= salida: ${formatHora(salidaSec)})`;
+          } else if (activo1 === false) {
+            // Caso 4: Pulser desactivó explícitamente en ubicaciones1
+            activo = false;
+            estado = 'SALIDA';
+            horaReferenciaSec = salidaSec || gpsTimestampSec;
+            motivoLog = 'Pulser desactivado (activo === false en ubicaciones1)';
+          } else if (activo0 === false && salidaSec > 0) {
+            // Caso 5: Marcación de salida en ubicaciones
+            activo = false;
+            estado = 'SALIDA';
+            horaReferenciaSec = salidaSec || gpsTimestampSec;
+            motivoLog = 'Salida realizada (activo === false en ubicaciones)';
+          } else if (activo1 === true || activo0 === true) {
+            // Caso 6: Pulser activo general
+            activo = true;
+            estado = 'LLEGO';
+            horaReferenciaSec = llegadaSec || gpsTimestampSec;
+            motivoLog = 'Pulser activo (true)';
           } else {
+            // Caso 7: En camino
+            activo = false;
             estado = 'EN_CAMINO';
-            estadoTexto = 'Esperando confirmación de llegada del bus';
+            horaReferenciaSec = null;
+            motivoLog = 'En espera / en camino';
           }
 
           const horaGenerada = formatHora(horaReferenciaSec);
+
+          if (estado === 'SALIDA') {
+            estadoTexto = horaGenerada ? `Salida realizada (${horaGenerada})` : 'Salida realizada (Esperando siguiente punto)';
+          } else if (estado === 'LLEGO') {
+            estadoTexto = horaGenerada ? `Ya llegó (${horaGenerada})` : 'Ya llegó el bus';
+          } else {
+            estadoTexto = 'Esperando confirmación de llegada del bus';
+          }
+
+          // LOGGERS DETALLADOS EN CONSOLA DEL SERVIDOR
+          console.log('\n================== [API CONSULTAR] ==================');
+          console.log(`🕒 Timestamp consulta: ${new Date().toLocaleTimeString('es-PE')}`);
+          console.log(`👤 Pasajero DNI: ${dni} | uidpulser: ${uidpulser}`);
+          console.log(`📍 ubicaciones1 -> activo: ${activo1} | GPS: ${gpsTimestampSec ? formatHora(gpsTimestampSec) : 'N/A'} | Coords: [${lat}, ${lng}]`);
+          console.log(`🛑 ubicaciones  -> activo: ${activo0} | llegada: ${llegadaSec ? formatHora(llegadaSec) : 'N/A'} | salida: ${salidaSec ? formatHora(salidaSec) : 'N/A'}`);
+          console.log(`🎯 RESOLUCIÓN   -> ACTIVO: ${activo} | ESTADO: ${estado} | HORA: ${horaGenerada}`);
+          console.log(`💡 MOTIVO       -> ${motivoLog}`);
+          console.log('=====================================================\n');
 
           if (!isNaN(lat) && !isNaN(lng)) {
             coordenadasPulser = {
