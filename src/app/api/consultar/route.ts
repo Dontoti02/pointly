@@ -247,60 +247,100 @@ export async function POST(req: Request) {
             lng = Number(pData0.lng ?? pData0.lon ?? pData0.longitude);
           }
 
-          // MAPEO DE PARADAS EN LA RUTA:
-          // Índice 0 (primer punto) -> 'llegada' y 'salida' (o 'llegada0' / 'salida0')
-          // Índice 1 (segundo punto) -> 'llegada1' y 'salida1'
-          // Índice 2 (tercer punto) -> 'llegada2' y 'salida2', etc.
+          // MAPEO DE PARADAS EN LA RUTA (Indexadas desde 1, confirmado por el usuario):
+          // Parada 1 (idx 0) -> 'llegada1' y 'salida1' (con fallback a 'llegada'/'salida')
+          // Parada 2 (idx 1) -> 'llegada2' y 'salida2'
+          // Parada 3 (idx 2) -> 'llegada3' y 'salida3'
+          // Parada N (idx N-1) -> 'llegadaN' y 'salidaN'
           const idxPuntoPasajero = puntosRuta.findIndex(
             (p) => p.toUpperCase().trim() === puntoPasajeroUpper
           );
 
-          let puntoLlegadaSec: number | null = null;
-          let puntoSalidaSec: number | null = null;
+          // Construcción del historial ordenado y resolución de parada activa
+          let encontradaActiva = false;
+          let paradaActivaPunto: string | null = null;
+          let paradaActivaEstado: 'EN_PARADA' | 'EN_CAMINO' = 'EN_CAMINO';
 
-          if (idxPuntoPasajero === 0) {
-            puntoLlegadaSec = getTimestampSeconds(mergedData['llegada']) || getTimestampSeconds(mergedData['llegada0']);
-            puntoSalidaSec = getTimestampSeconds(mergedData['salida']) || getTimestampSeconds(mergedData['salida0']);
-          } else if (idxPuntoPasajero > 0) {
-            puntoLlegadaSec = getTimestampSeconds(mergedData[`llegada${idxPuntoPasajero}`]);
-            puntoSalidaSec = getTimestampSeconds(mergedData[`salida${idxPuntoPasajero}`]);
-          }
-
-          // Historial de todas las paradas de la ruta con sus horas
-          let maxLlegadaGlobalSec = 0;
-          let maxSalidaGlobalSec = 0;
           const historialPuntos: Array<{
             punto: string;
             idx: number;
+            numeroParada: number;
             horaLlegada: string | null;
             horaSalida: string | null;
+            estado: 'BLOQUEADA' | 'EN_PARADA' | 'EN_CAMINO' | 'PENDIENTE';
+            estadoTexto: string;
           }> = [];
 
           puntosRuta.forEach((pto, i) => {
-            const kLleg = i === 0 ? 'llegada' : `llegada${i}`;
-            const kSal = i === 0 ? 'salida' : `salida${i}`;
-            const sLleg = getTimestampSeconds(mergedData[kLleg]) || (i === 0 ? getTimestampSeconds(mergedData['llegada0']) : null);
-            const sSal = getTimestampSeconds(mergedData[kSal]) || (i === 0 ? getTimestampSeconds(mergedData['salida0']) : null);
-            if (sLleg && sLleg > maxLlegadaGlobalSec) maxLlegadaGlobalSec = sLleg;
-            if (sSal && sSal > maxSalidaGlobalSec) maxSalidaGlobalSec = sSal;
+            const num = i + 1; // 1-based (Parada 1, Parada 2...)
+            const kLleg = `llegada${num}`;
+            const kSal = `salida${num}`;
+
+            let sLleg = getTimestampSeconds(mergedData[kLleg]);
+            let sSal = getTimestampSeconds(mergedData[kSal]);
+
+            // Fallback para Parada 1 si existen claves sin número 'llegada' / 'salida'
+            if (num === 1) {
+              if (!sLleg) sLleg = getTimestampSeconds(mergedData['llegada']) || getTimestampSeconds(mergedData['llegada0']);
+              if (!sSal) sSal = getTimestampSeconds(mergedData['salida']) || getTimestampSeconds(mergedData['salida0']);
+            }
+
+            let estadoPto: 'BLOQUEADA' | 'EN_PARADA' | 'EN_CAMINO' | 'PENDIENTE' = 'PENDIENTE';
+            let estadoPtoTexto = 'Pendiente en la ruta';
+
+            if (sSal) {
+              // Ya registró salida -> BLOQUEADA / COMPLETADA
+              estadoPto = 'BLOQUEADA';
+              estadoPtoTexto = 'Salida completada';
+            } else if (sLleg) {
+              // Ya llegó pero aún no sale -> EN PARADA
+              estadoPto = 'EN_PARADA';
+              estadoPtoTexto = 'En zona de abordaje';
+              if (!encontradaActiva) {
+                encontradaActiva = true;
+                paradaActivaPunto = pto;
+                paradaActivaEstado = 'EN_PARADA';
+              }
+            } else if (!encontradaActiva) {
+              // Es la primera parada que aún no tiene llegada ni salida -> EN CAMINO hacia aquí
+              estadoPto = 'EN_CAMINO';
+              estadoPtoTexto = i === 0 ? 'En camino al 1er embarque' : 'Próxima parada a llegar';
+              encontradaActiva = true;
+              paradaActivaPunto = pto;
+              paradaActivaEstado = 'EN_CAMINO';
+            } else {
+              // Parada futura
+              estadoPto = 'PENDIENTE';
+              estadoPtoTexto = 'Pendiente';
+            }
+
             historialPuntos.push({
               punto: pto,
               idx: i,
+              numeroParada: num,
               horaLlegada: formatHora(sLleg),
               horaSalida: formatHora(sSal),
+              estado: estadoPto,
+              estadoTexto: estadoPtoTexto,
             });
           });
 
-          // Escanear cualquier otra llave llegadaN / salidaN
-          for (const [k, v] of Object.entries(mergedData)) {
-            const s = getTimestampSeconds(v);
-            if (!s) continue;
-            if (/^llegada\d*$/i.test(k) && s > maxLlegadaGlobalSec) maxLlegadaGlobalSec = s;
-            if (/^salida\d*$/i.test(k) && s > maxSalidaGlobalSec) maxSalidaGlobalSec = s;
-          }
+          // Obtener los timestamps específicos de la parada del pasajero
+          let puntoLlegadaSec: number | null = null;
+          let puntoSalidaSec: number | null = null;
+          let puntoPasajeroEstado: 'BLOQUEADA' | 'EN_PARADA' | 'EN_CAMINO' | 'PENDIENTE' = 'EN_CAMINO';
 
-          const llegadaSecFinal = puntoLlegadaSec ?? (idxPuntoPasajero < 0 ? maxLlegadaGlobalSec : null);
-          const salidaSecFinal = puntoSalidaSec ?? (idxPuntoPasajero < 0 ? maxSalidaGlobalSec : null);
+          if (idxPuntoPasajero >= 0 && idxPuntoPasajero < historialPuntos.length) {
+            const h = historialPuntos[idxPuntoPasajero];
+            const num = idxPuntoPasajero + 1;
+            puntoLlegadaSec = getTimestampSeconds(mergedData[`llegada${num}`]);
+            puntoSalidaSec = getTimestampSeconds(mergedData[`salida${num}`]);
+            if (num === 1) {
+              if (!puntoLlegadaSec) puntoLlegadaSec = getTimestampSeconds(mergedData['llegada']) || getTimestampSeconds(mergedData['llegada0']);
+              if (!puntoSalidaSec) puntoSalidaSec = getTimestampSeconds(mergedData['salida']) || getTimestampSeconds(mergedData['salida0']);
+            }
+            puntoPasajeroEstado = h.estado;
+          }
 
           // RESOLUCIÓN DE ESTADO Y HORAS PARA EL PASAJERO
           let activo = false;
@@ -309,51 +349,42 @@ export async function POST(req: Request) {
           let horaReferenciaSec: number | null = null;
           let motivoLog = '';
 
-          if (salidaSecFinal && (!llegadaSecFinal || salidaSecFinal >= llegadaSecFinal)) {
-            // El bus ya completó salida de su paradero -> EN RUTA
+          const horaLlegadaPunto = formatHora(puntoLlegadaSec);
+          const horaSalidaPunto = formatHora(puntoSalidaSec);
+
+          if (puntoSalidaSec) {
+            // El bus ya completó salida del paradero del pasajero -> Parada bloqueada, bus EN RUTA al siguiente punto
             activo = false;
             estado = 'SALIDA';
-            horaReferenciaSec = salidaSecFinal;
-            motivoLog = `Salida registrada en ${pasajeroEncontrado.punto || 'paradero'} (${formatHora(salidaSecFinal)})`;
-          } else if (llegadaSecFinal && (!salidaSecFinal || llegadaSecFinal > salidaSecFinal)) {
-            // El bus ya llegó a su paradero y aún no sale -> YA LLEGÓ
+            horaReferenciaSec = puntoSalidaSec;
+            motivoLog = `Salida completada de ${pasajeroEncontrado.punto} (${horaSalidaPunto}). Próxima parada: ${paradaActivaPunto || 'Destino final'}`;
+            estadoTexto = `El bus completó salida de tu punto de abordaje (${pasajeroEncontrado.punto}) a las ${horaSalidaPunto} y se encuentra en ruta${paradaActivaPunto ? ` hacia ${paradaActivaPunto}` : ''}.`;
+          } else if (puntoLlegadaSec && !puntoSalidaSec) {
+            // El bus ya llegó al paradero del pasajero y aún no sale -> YA LLEGÓ
             activo = true;
             estado = 'LLEGO';
-            horaReferenciaSec = llegadaSecFinal;
-            motivoLog = `Llegada registrada en ${pasajeroEncontrado.punto || 'paradero'} (${formatHora(llegadaSecFinal)})`;
-          } else if (activo1 === true && gpsTimestampSec) {
-            // Bus en movimiento en camino
-            activo = true;
+            horaReferenciaSec = puntoLlegadaSec;
+            motivoLog = `Bus en zona de abordaje de ${pasajeroEncontrado.punto} (${horaLlegadaPunto})`;
+            estadoTexto = `¡El bus ya llegó a tu zona de abordaje (${pasajeroEncontrado.punto}) a las ${horaLlegadaPunto}!`;
+          } else {
+            // El bus aún no llega al paradero del pasajero
+            activo = Boolean(activo1);
             estado = 'EN_CAMINO';
             horaReferenciaSec = gpsTimestampSec;
-            motivoLog = 'Bus en tránsito hacia el paradero (GPS activo)';
-          } else if (maxSalidaGlobalSec > 0 && maxSalidaGlobalSec >= maxLlegadaGlobalSec) {
-            activo = false;
-            estado = 'SALIDA';
-            horaReferenciaSec = maxSalidaGlobalSec;
-            motivoLog = 'Salida de parada previa en la ruta';
-          } else {
-            activo = false;
-            estado = 'EN_CAMINO';
-            horaReferenciaSec = null;
-            motivoLog = 'Esperando confirmación de llegada del bus';
+
+            if (idxPuntoPasajero === 0) {
+              motivoLog = `Esperando llegada a la 1ª parada (${pasajeroEncontrado.punto})`;
+              estadoTexto = `El bus aún no llega al primer punto de embarque (${pasajeroEncontrado.punto}).`;
+            } else if (paradaActivaPunto === pasajeroEncontrado.punto) {
+              motivoLog = `Bus en camino directo hacia ${pasajeroEncontrado.punto}`;
+              estadoTexto = `El bus se encuentra en camino hacia tu punto de abordaje (${pasajeroEncontrado.punto}).`;
+            } else {
+              motivoLog = `Bus completando paradas previas. Próxima: ${paradaActivaPunto || 'en ruta'}`;
+              estadoTexto = `El bus está completando el itinerario previo en camino a ${pasajeroEncontrado.punto}.`;
+            }
           }
 
-          const horaGenerada = formatHora(horaReferenciaSec);
-          const horaLlegadaPunto = formatHora(puntoLlegadaSec || (idxPuntoPasajero < 0 && maxLlegadaGlobalSec ? maxLlegadaGlobalSec : null));
-          const horaSalidaPunto = formatHora(puntoSalidaSec || (idxPuntoPasajero < 0 && maxSalidaGlobalSec ? maxSalidaGlobalSec : null));
-
-          if (estado === 'SALIDA') {
-            estadoTexto = horaSalidaPunto
-              ? `En ruta tras salir de ${pasajeroEncontrado.punto || 'la estación'} (${horaSalidaPunto})`
-              : 'En ruta hacia el siguiente punto';
-          } else if (estado === 'LLEGO') {
-            estadoTexto = horaLlegadaPunto
-              ? `Ya llegó a ${pasajeroEncontrado.punto || 'la zona de abordaje'} (${horaLlegadaPunto})`
-              : 'Ya llegó el bus';
-          } else {
-            estadoTexto = `Esperando llegada a ${pasajeroEncontrado.punto || 'la zona de abordaje'}`;
-          }
+          const horaGenerada = horaSalidaPunto || horaLlegadaPunto || formatHora(horaReferenciaSec);
 
           // LOGGERS DETALLADOS EN CONSOLA DEL SERVIDOR (Zona Horaria Perú)
           console.log('\n================== [API CONSULTAR] ==================');

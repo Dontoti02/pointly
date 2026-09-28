@@ -181,8 +181,11 @@ export interface BusLocation {
   historialPuntos?: Array<{
     punto: string;
     idx: number;
+    numeroParada?: number;
     horaLlegada: string | null;
     horaSalida: string | null;
+    estado?: 'BLOQUEADA' | 'EN_PARADA' | 'EN_CAMINO' | 'PENDIENTE';
+    estadoTexto?: string;
   }>;
   timestamp?: number | null;
   velocidad?: number | null;

@@ -24,8 +24,8 @@ import {
   ChevronDown,
   Navigation,
   X,
-  Radio,
   Sparkles,
+  Lock,
 } from 'lucide-react';
 
 // Dynamic import of Map to prevent SSR "window is not defined" error
@@ -475,7 +475,7 @@ export default function HomePage() {
                     maxLength={12}
                     value={dni}
                     onChange={(e) => setDni(e.target.value)}
-                    placeholder="Ingrese su DNI (ej. 70123456)"
+                    placeholder="Ingrese su DNI"
                     required
                     autoFocus
                     className="w-full pl-11 pr-4 py-2.5 rounded-xl border border-slate-700 bg-slate-800/90 text-white text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 transition-all font-mono"
@@ -756,7 +756,7 @@ export default function HomePage() {
                   {estadoLegend === 'LLEGO' && (
                     <div className="pt-0.5">
                       <p className="text-[11px] text-slate-300 leading-tight">
-                        El bus se encuentra en la zona de abordaje de <strong>{pasajero.punto}</strong>.
+                        {pulser?.estadoTexto || `El bus se encuentra en la zona de abordaje de ${pasajero.punto}.`}
                       </p>
                     </div>
                   )}
@@ -764,14 +764,14 @@ export default function HomePage() {
                   {estadoLegend === 'SALIDA' && (
                     <div className="space-y-2 pt-0.5">
                       <p className="text-[11px] text-slate-300 leading-tight">
-                        El bus se encuentra <strong>en ruta</strong> tras registrar salida de <strong>{pasajero.punto}</strong>.
+                        {pulser?.estadoTexto || `El bus completó salida de ${pasajero.punto} y se encuentra en ruta.`}
                       </p>
 
                       {/* SIGUIENTE PARADERO CON VECTOR SVG */}
                       <div className="p-2 rounded-lg bg-slate-800/80 border border-slate-700/80 flex items-center justify-between text-xs">
                         <div>
                           <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wide">
-                            Esperando otro punto de abordaje:
+                            Próximo punto de abordaje:
                           </span>
                           <span className="font-bold text-amber-300 text-xs">
                             {pasajero.siguientePunto || 'Siguiente Estación'}
@@ -788,15 +788,12 @@ export default function HomePage() {
                     <div className="space-y-1 pt-0.5">
                       <div className="flex items-center gap-1.5 text-xs text-sky-300 font-medium">
                         <RefreshCw className="w-3.5 h-3.5 text-sky-400 animate-spin" />
-                        <span>Esperando confirmación de llegada del bus</span>
+                        <span>{pulser?.estadoTexto || `El bus se dirige a ${pasajero.punto}`}</span>
                       </div>
-                      <p className="text-[11px] text-slate-300 leading-tight">
-                        El bus se dirige a <strong>{pasajero.punto}</strong>.
-                      </p>
                     </div>
                   )}
 
-                  {/* ITINERARIO COMPLETO DE PARADAS (llegada, salida, llegada1, salida1, etc.) */}
+                  {/* ITINERARIO SECUENCIAL DE PARADAS (Bloqueo progresivo y seguimiento de siguiente parada) */}
                   {pulser?.historialPuntos && pulser.historialPuntos.length > 0 && (
                     <div className="mt-2.5 pt-2 border-t border-slate-700/60">
                       <div className="flex items-center justify-between mb-1.5">
@@ -811,29 +808,69 @@ export default function HomePage() {
                       <div className="space-y-1.5">
                         {pulser.historialPuntos.map((pto) => {
                           const esMiParada = pto.punto.toUpperCase().trim() === pasajero.punto?.toUpperCase().trim();
-                          const tieneHoras = pto.horaLlegada || pto.horaSalida;
+                          const tieneHoras = Boolean(pto.horaLlegada || pto.horaSalida);
+                          const esBloqueada = pto.estado === 'BLOQUEADA' || Boolean(pto.horaSalida);
+                          const esEnParada = pto.estado === 'EN_PARADA' || (Boolean(pto.horaLlegada) && !pto.horaSalida);
+                          const esEnCamino = pto.estado === 'EN_CAMINO' || (!esBloqueada && !esEnParada && !tieneHoras && pto.idx === 0);
+
                           return (
                             <div
                               key={pto.idx}
                               className={`p-2 rounded-lg text-xs transition-all ${
                                 esMiParada
-                                  ? 'bg-amber-950/20 border border-amber-500/40 shadow-sm'
-                                  : 'bg-slate-900/50 border border-slate-800'
+                                  ? 'bg-amber-950/20 border border-amber-500/50 shadow-sm ring-1 ring-amber-500/20'
+                                  : esBloqueada
+                                  ? 'bg-slate-900/60 border border-slate-800 opacity-75'
+                                  : esEnParada
+                                  ? 'bg-emerald-950/30 border border-emerald-500/40 shadow-sm'
+                                  : esEnCamino
+                                  ? 'bg-sky-950/30 border border-sky-500/40 shadow-sm'
+                                  : 'bg-slate-900/40 border border-slate-800/80'
                               }`}
                             >
                               <div className="flex items-center justify-between mb-0.5">
-                                <span className={`font-semibold flex items-center gap-1.5 ${esMiParada ? 'text-amber-300 font-bold' : 'text-slate-200'}`}>
-                                  <span className={`w-2 h-2 rounded-full ${pto.horaSalida ? 'bg-amber-400' : pto.horaLlegada ? 'bg-emerald-400 animate-pulse' : 'bg-slate-600'}`}></span>
-                                  {pto.punto}
+                                <span className={`font-semibold flex items-center gap-1.5 ${esMiParada ? 'text-amber-300 font-bold' : esBloqueada ? 'text-slate-300' : esEnParada ? 'text-emerald-300' : esEnCamino ? 'text-sky-300' : 'text-slate-400'}`}>
+                                  {esBloqueada ? (
+                                    <Lock className="w-3 h-3 text-slate-400" />
+                                  ) : esEnParada ? (
+                                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                                  ) : esEnCamino ? (
+                                    <span className="w-2 h-2 rounded-full bg-sky-400 animate-ping"></span>
+                                  ) : (
+                                    <span className="w-1.5 h-1.5 rounded-full bg-slate-600"></span>
+                                  )}
+                                  <span>{pto.punto}</span>
                                   {esMiParada && (
                                     <span className="text-[9px] px-1.5 py-0.2 rounded-full bg-amber-500/25 text-amber-300 border border-amber-500/40 font-semibold">
                                       Tu Parada
                                     </span>
                                   )}
                                 </span>
-                                <span className="text-[10px] font-medium text-slate-400">
-                                  {pto.horaSalida ? 'Salida' : pto.horaLlegada ? 'En parada' : 'Pendiente'}
-                                </span>
+
+                                {/* Badges contextuales de parada */}
+                                {esBloqueada && (
+                                  <span className="inline-flex items-center gap-1 text-[10px] font-bold text-slate-400 px-1.5 py-0.5 rounded bg-slate-800/90 border border-slate-700">
+                                    <Lock className="w-2.5 h-2.5 text-slate-400" />
+                                    Bloqueada
+                                  </span>
+                                )}
+                                {esEnParada && (
+                                  <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-300 px-1.5 py-0.5 rounded bg-emerald-500/20 border border-emerald-500/40">
+                                    <CheckCircle2 className="w-2.5 h-2.5 text-emerald-400" />
+                                    En Parada
+                                  </span>
+                                )}
+                                {esEnCamino && !esEnParada && !esBloqueada && (
+                                  <span className="inline-flex items-center gap-1 text-[10px] font-bold text-sky-300 px-1.5 py-0.5 rounded bg-sky-500/20 border border-sky-500/40">
+                                    <RefreshCw className="w-2.5 h-2.5 text-sky-400 animate-spin" />
+                                    En Camino
+                                  </span>
+                                )}
+                                {!esBloqueada && !esEnParada && !esEnCamino && (
+                                  <span className="text-[10px] font-medium text-slate-500">
+                                    Pendiente
+                                  </span>
+                                )}
                               </div>
 
                               {tieneHoras ? (
@@ -846,14 +883,14 @@ export default function HomePage() {
                                   </div>
                                   <div className="flex items-center gap-1 text-slate-300">
                                     <span className="text-slate-400 font-medium">Salida:</span>
-                                    <span className="font-mono font-bold text-amber-300">
+                                    <span className={`font-mono font-bold ${esBloqueada ? 'text-slate-300' : 'text-amber-300'}`}>
                                       {pto.horaSalida || '—'}
                                     </span>
                                   </div>
                                 </div>
                               ) : (
-                                <span className="text-[10px] text-slate-500 italic block mt-0.5">
-                                  Sin registro de llegada aún
+                                <span className="text-[10px] text-slate-400 italic block mt-0.5">
+                                  {esEnCamino ? 'Próxima parada en curso' : 'Pendiente en la ruta'}
                                 </span>
                               )}
                             </div>
