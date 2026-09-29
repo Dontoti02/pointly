@@ -39,3 +39,8 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# AI Agent skills and configs
+.agents/
+.agent/
+docs/superpowers/
