@@ -1,7 +1,4 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "framework": "nextjs",
-  "env": {
-    "TZ": "America/Lima"
-  }
+  "framework": "nextjs"
 }
