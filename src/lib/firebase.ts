@@ -1,5 +1,5 @@
 import { initializeApp, getApps, type FirebaseApp } from 'firebase/app';
-import { getAuth, type Auth } from 'firebase/auth';
+import { getAuth, signInAnonymously, type Auth } from 'firebase/auth';
 import { getFirestore, type Firestore } from 'firebase/firestore';
 
 export const firebaseConfig = {
@@ -7,10 +7,9 @@ export const firebaseConfig = {
   projectId: "asistencia-bus",
 };
 
-// Constantes centralizadas para las colecciones de la base de datos Firestore
 export const DB_COLLECTIONS = {
-  MANIFIESTO: 'manifiesto1',
-  UBICACIONES: 'ubicaciones1',
+  MANIFIESTO: 'manifiesto',
+  UBICACIONES: 'ubicaciones',
   UBICACIONES_ESTADO: 'ubicaciones',
   CAPTURA: 'captura',
 } as const;
@@ -32,6 +31,25 @@ if (typeof window !== 'undefined') {
   }
   auth = getAuth(app);
   db = getFirestore(app);
+}
+
+export async function ensureClientAuth() {
+  if (typeof window === 'undefined') return null;
+  try {
+    if (!app) {
+      app = getApps().length ? getApps()[0] : initializeApp(firebaseConfig);
+    }
+    if (!auth) {
+      auth = getAuth(app);
+    }
+    if (!auth.currentUser) {
+      await signInAnonymously(auth);
+    }
+    return auth.currentUser;
+  } catch (err) {
+    console.warn('Aviso en autenticación anónima cliente:', err);
+    return null;
+  }
 }
 
 export { app, auth, db };

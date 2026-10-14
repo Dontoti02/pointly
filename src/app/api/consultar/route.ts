@@ -267,7 +267,7 @@ export async function POST(req: Request) {
             numeroParada: number;
             horaLlegada: string | null;
             horaSalida: string | null;
-            estado: 'BLOQUEADA' | 'EN_PARADA' | 'EN_CAMINO' | 'PENDIENTE';
+            estado: 'TERMINADO' | 'EN_PARADA' | 'EN_CAMINO' | 'PENDIENTE';
             estadoTexto: string;
           }> = [];
 
@@ -285,13 +285,14 @@ export async function POST(req: Request) {
               if (!sSal) sSal = getTimestampSeconds(mergedData['salida']) || getTimestampSeconds(mergedData['salida0']);
             }
 
-            let estadoPto: 'BLOQUEADA' | 'EN_PARADA' | 'EN_CAMINO' | 'PENDIENTE' = 'PENDIENTE';
+            let estadoPto: 'TERMINADO' | 'EN_PARADA' | 'EN_CAMINO' | 'PENDIENTE' = 'PENDIENTE';
             let estadoPtoTexto = 'Pendiente en la ruta';
 
             if (sSal) {
               // Ya registró salida -> BLOQUEADA / COMPLETADA
-              estadoPto = 'BLOQUEADA';
+              estadoPto = 'TERMINADO';
               estadoPtoTexto = 'Salida completada';
+              
             } else if (sLleg) {
               // Ya llegó pero aún no sale -> EN PARADA
               estadoPto = 'EN_PARADA';
@@ -328,7 +329,7 @@ export async function POST(req: Request) {
           // Obtener los timestamps específicos de la parada del pasajero
           let puntoLlegadaSec: number | null = null;
           let puntoSalidaSec: number | null = null;
-          let puntoPasajeroEstado: 'BLOQUEADA' | 'EN_PARADA' | 'EN_CAMINO' | 'PENDIENTE' = 'EN_CAMINO';
+          let puntoPasajeroEstado: 'TERMINADO' | 'EN_PARADA' | 'EN_CAMINO' | 'PENDIENTE' = 'EN_CAMINO';
 
           if (idxPuntoPasajero >= 0 && idxPuntoPasajero < historialPuntos.length) {
             const h = historialPuntos[idxPuntoPasajero];
@@ -358,14 +359,14 @@ export async function POST(req: Request) {
             estado = 'SALIDA';
             horaReferenciaSec = puntoSalidaSec;
             motivoLog = `Salida completada de ${pasajeroEncontrado.punto} (${horaSalidaPunto}). Próxima parada: ${paradaActivaPunto || 'Destino final'}`;
-            estadoTexto = `El bus completó salida de tu punto de abordaje (${pasajeroEncontrado.punto}) a las ${horaSalidaPunto} y se encuentra en ruta${paradaActivaPunto ? ` hacia ${paradaActivaPunto}` : ''}.`;
+            estadoTexto = `El bus completó salida de tu punto de abordaje a las ${horaSalidaPunto} y se encuentra en ruta${paradaActivaPunto ? ` hacia ${paradaActivaPunto}` : ''}.`;
           } else if (puntoLlegadaSec && !puntoSalidaSec) {
             // El bus ya llegó al paradero del pasajero y aún no sale -> YA LLEGÓ
             activo = true;
             estado = 'LLEGO';
             horaReferenciaSec = puntoLlegadaSec;
             motivoLog = `Bus en zona de abordaje de ${pasajeroEncontrado.punto} (${horaLlegadaPunto})`;
-            estadoTexto = `¡El bus ya llegó a tu zona de abordaje (${pasajeroEncontrado.punto}) a las ${horaLlegadaPunto}!`;
+            estadoTexto = `¡El bus ya llegó a tu zona de abordaje a las ${horaLlegadaPunto}!`;
           } else {
             // El bus aún no llega al paradero del pasajero
             activo = Boolean(activo1);

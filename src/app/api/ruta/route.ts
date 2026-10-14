@@ -19,22 +19,40 @@ const CACHE_TTL_MS = 60 * 1000; // 1 minuto de caché por par de coordenadas
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { startLat, startLng, endLat, endLng, profile = 'driving' } = body;
+    const { startLat, startLng, endLat, endLng, points, profile = 'driving' } = body;
 
-    const sLat = Number(startLat);
-    const sLng = Number(startLng);
-    const eLat = Number(endLat);
-    const eLng = Number(endLng);
+    let coordString = '';
+    let directCoords: [number, number][] = [];
 
-    if (isNaN(sLat) || isNaN(sLng) || isNaN(eLat) || isNaN(eLng)) {
-      return NextResponse.json(
-        { ok: false, error: 'Coordenadas inválidas para calcular la ruta vial.' },
-        { status: 400 }
-      );
+    if (Array.isArray(points) && points.length >= 2) {
+      const validPoints = points.filter((p: any) => !isNaN(Number(p.lat)) && !isNaN(Number(p.lng)));
+      if (validPoints.length >= 2) {
+        coordString = validPoints.map((p: any) => `${Number(p.lng)},${Number(p.lat)}`).join(';');
+        directCoords = validPoints.map((p: any) => [Number(p.lat), Number(p.lng)]);
+      }
     }
 
-    // Clave de caché redondeada a 4 decimales (~11 metros de precisión)
-    const cacheKey = `${sLat.toFixed(4)},${sLng.toFixed(4)}->${eLat.toFixed(4)},${eLng.toFixed(4)}:${profile}`;
+    if (!coordString) {
+      const sLat = Number(startLat);
+      const sLng = Number(startLng);
+      const eLat = Number(endLat);
+      const eLng = Number(endLng);
+
+      if (isNaN(sLat) || isNaN(sLng) || isNaN(eLat) || isNaN(eLng)) {
+        return NextResponse.json(
+          { ok: false, error: 'Coordenadas inválidas para calcular la ruta vial.' },
+          { status: 400 }
+        );
+      }
+      coordString = `${sLng},${sLat};${eLng},${eLat}`;
+      directCoords = [
+        [sLat, sLng],
+        [eLat, eLng],
+      ];
+    }
+
+    // Clave de caché
+    const cacheKey = `${coordString}:${profile}`;
     const cached = routeCache.get(cacheKey);
     if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
       return NextResponse.json({ ok: true, ...cached, fromCache: true });
@@ -42,8 +60,8 @@ export async function POST(req: Request) {
 
     // Servidores de ruteo vehicular / peatonal de código abierto
     const routingUrls = [
-      `https://router.project-osrm.org/route/v1/${profile}/${sLng},${sLat};${eLng},${eLat}?overview=full&geometries=geojson&steps=true`,
-      `https://routing.openstreetmap.de/routed-car/route/v1/driving/${sLng},${sLat};${eLng},${eLat}?overview=full&geometries=geojson&steps=true`,
+      `https://router.project-osrm.org/route/v1/${profile}/${coordString}?overview=full&geometries=geojson&steps=true`,
+      `https://routing.openstreetmap.de/routed-car/route/v1/driving/${coordString}?overview=full&geometries=geojson&steps=true`,
     ];
 
     let routeData: any = null;
@@ -78,7 +96,7 @@ export async function POST(req: Request) {
       // Si el perfil driving no encuentra vía directa (ej. zona peatonal estricta), intentar perfil walking
       if (profile === 'driving') {
         try {
-          const walkUrl = `https://router.project-osrm.org/route/v1/walking/${sLng},${sLat};${eLng},${eLat}?overview=full&geometries=geojson&steps=true`;
+          const walkUrl = `https://router.project-osrm.org/route/v1/walking/${coordString}?overview=full&geometries=geojson&steps=true`;
           const walkRes = await fetch(walkUrl);
           if (walkRes.ok) {
             const walkJson = await walkRes.json();
@@ -145,10 +163,7 @@ export async function POST(req: Request) {
     return NextResponse.json({
       ok: false,
       error: 'No se pudo generar la ruta vial en este momento.',
-      coords: [
-        [sLat, sLng],
-        [eLat, eLng],
-      ],
+      coords: directCoords,
       distanceText: 'Calculando...',
       durationText: '--',
     });
