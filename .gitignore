@@ -42,3 +42,9 @@ next-env.d.ts
 
 # IDE
 .vscode/
+
+# AI Agent skills and configs
+.agents/
+.agent/
+docs/superpowers/
+
