@@ -1,0 +1,37 @@
+name: Vercel Auto Deploy & Build Check
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  build-and-deploy:
+    name: Validar y Desplegar
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 1. Descargar repositorio
+        uses: actions/checkout@v4
+
+      - name: 2. Configurar Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: 3. Instalar dependencias
+        run: npm ci
+
+      - name: 4. Validar compilación Next.js
+        run: npm run build
+
+      - name: 5. Disparar Deploy Hook de Vercel (si está configurado)
+        if: ${{ env.VERCEL_DEPLOY_HOOK != '' }}
+        env:
+          VERCEL_DEPLOY_HOOK: ${{ secrets.VERCEL_DEPLOY_HOOK }}
+        run: |
+          echo "Disparando despliegue automático en Vercel..."
+          curl -X POST "$VERCEL_DEPLOY_HOOK"
+          echo "¡Despliegue ordenado exitosamente a Vercel!"
